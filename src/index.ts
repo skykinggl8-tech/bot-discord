@@ -16,6 +16,3 @@ client.on("messageCreate", async (message: Message) => {
     await handleAbateDivisional(message);
   }
 });
-"scripts": {
-  "start": "node bot.js"
-}
