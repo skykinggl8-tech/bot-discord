@@ -81,9 +81,7 @@ createCommand({
 
 **<:ACM:1465675415065595904> - Total de Abates: ${totalAbates}**
 
-**<:ACM:1465675415065595904> - Data da Consulta: ${dateStr}**
-
-**╰⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯╯**`;
+**<:ACM:1465675415065595904> - Data da Consulta: ${dateStr}**`;
     
     await interaction.editReply(report);
   }
