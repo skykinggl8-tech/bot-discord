@@ -47,7 +47,6 @@ async function getMessageCount(userId: string, client: any): Promise<number> {
         if (!channel || !channel.isTextBased()) continue;
         
         const messages = await channel.messages.fetch({ limit: 100 });
-        // Conta mensagens que mencionam o usuário
         const mentionMessages = messages.filter((m: any) => m.mentions.users.has(userId));
         totalMentions += mentionMessages.size;
       } catch {
@@ -64,16 +63,12 @@ async function getMessageCount(userId: string, client: any): Promise<number> {
 function generateAllOCRVariations(username: string): string[] {
   const variations = new Set<string>();
   
-  // Adiciona original
   variations.add(username);
   
-  // Remove acentos
   const withoutAccents = username.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   variations.add(withoutAccents);
   
-  // Correções específicas de OCR
   const ocrFixes = [
-    // Letras confundíveis
     { from: /rn/g, to: 'm' },
     { from: /m/g, to: 'rn' },
     { from: /vv/g, to: 'w' },
@@ -100,7 +95,6 @@ function generateAllOCRVariations(username: string): string[] {
     { from: /b/g, to: 'h' },
     { from: /cl/g, to: 'd' },
     { from: /d/g, to: 'cl' },
-    // p, j, h são muito confundidos pelo OCR
     { from: /p/g, to: 'h' },
     { from: /h/g, to: 'p' },
     { from: /j/g, to: 'h' },
@@ -109,7 +103,6 @@ function generateAllOCRVariations(username: string): string[] {
     { from: /j/g, to: 'p' },
   ];
   
-  // Aplica todas as correções
   const baseVariations = [username, withoutAccents];
   
   for (const base of baseVariations) {
@@ -121,9 +114,7 @@ function generateAllOCRVariations(username: string): string[] {
     }
   }
   
-  // Combinações de múltiplas correções (mais comum em OCR ruim)
   for (const base of Array.from(variations)) {
-    // Tenta combinar 2 correções
     for (let i = 0; i < ocrFixes.length; i++) {
       for (let j = i + 1; j < ocrFixes.length; j++) {
         const fixed = base
@@ -136,7 +127,6 @@ function generateAllOCRVariations(username: string): string[] {
     }
   }
   
-  // Adiciona underscore antes de números (comum quando OCR remove)
   for (const base of Array.from(variations)) {
     if (!base.includes('_')) {
       const withUnderscore = base.replace(/([a-zA-Z])(\d+)/, '$1_$2');
@@ -146,7 +136,6 @@ function generateAllOCRVariations(username: string): string[] {
     }
   }
   
-  // Remove o username original do resultado
   const result = Array.from(variations).filter(v => v.length >= 3 && v.length <= 20);
   return result;
 }
@@ -170,7 +159,6 @@ async function getUserByUsername(username: string): Promise<RobloxUser | null> {
     const allVariations = generateAllOCRVariations(username);
     console.log(`🔄 Testando ${allVariations.length} variações...`);
     
-    // Testa em lotes para ser mais rápido
     for (let i = 0; i < allVariations.length; i += 10) {
       const batch = allVariations.slice(i, i + 10);
       
@@ -223,7 +211,6 @@ async function getUserRankInGroup(userId: number, groupId: number): Promise<stri
 }
 
 function processExtractedText(text: string): string | null {
-  // Limpeza inicial
   const cleanText = text
     .replace(/[|]/g, "I")
     .replace(/['']/g, "'")
@@ -232,7 +219,6 @@ function processExtractedText(text: string): string | null {
   
   console.log("🧹 Texto limpo:", cleanText);
   
-  // Palavras que indicam ação de kill
   const killWords = [
     "killed", "matou", "eliminated", "destroyed", "annihilated",
     "neutralized", "defeated", "slayed", "assassinated", "kill",
@@ -240,27 +226,20 @@ function processExtractedText(text: string): string | null {
     "executou", "execute", "executed", "abateu", "abate"
   ];
   
-  // Palavras da UI do Roblox e outras palavras comuns que NÃO são usernames
   const bannedWords = [
-    // Palavras de ação
     "killed", "matou", "eliminated", "destroyed", "annihilated",
     "neutralized", "defeated", "slayed", "assassinated", "kill",
     "eliminou", "destruiu", "aniquilou", "neutralizou", "derrotou",
     "executou", "execute", "executed", "abateu", "abate",
-    // UI do Roblox
     "roblox", "player", "health", "dead", "morto", "morte", "died",
     "respawn", "reset", "spawn", "game", "round", "match",
-    // Palavras comuns em inglês
     "the", "and", "you", "has", "was", "were", "with", "from",
     "that", "this", "have", "been", "your", "their", "them",
-    // Outras palavras comuns
     "score", "points", "team", "red", "blue", "win", "lose", "won", "lost"
   ];
   
-  // Separa palavras grudadas que contêm kill words
   let processedText = cleanText;
   for (const word of killWords) {
-    // Padrão: UsernameKilledUsername -> Username Killed Username
     const regex1 = new RegExp(`([A-Za-z0-9_]+)(${word})`, 'gi');
     const regex2 = new RegExp(`(${word})([A-Za-z0-9_]+)`, 'gi');
     processedText = processedText.replace(regex1, '$1 $2');
@@ -269,45 +248,37 @@ function processExtractedText(text: string): string | null {
   
   console.log("🔧 Texto processado:", processedText);
   
-  // Extrai todas as palavras
   const words = processedText.split(/\s+/).filter(w => w.length > 0);
   console.log("📝 Palavras extraídas:", words);
   
-  // Pattern de username do Roblox: 3-20 caracteres, começa com letra, só letras/números/underscore
   const usernamePattern = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
   
-  // Filtra palavras que parecem usernames E não são palavras banidas
   const potentialUsernames: string[] = [];
-  const usernamePositions: Map<string, number> = new Map(); // Guarda a posição de cada username
+  const usernamePositions: Map<string, number> = new Map();
   
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     const wordLower = word.toLowerCase();
     
-    // Verifica se NÃO é uma palavra banida
     if (bannedWords.includes(wordLower)) {
       console.log(`🚫 Palavra banida ignorada: "${word}"`);
       continue;
     }
     
-    // Testa se parece username
     if (usernamePattern.test(word)) {
       potentialUsernames.push(word);
-      usernamePositions.set(word, i); // Guarda posição
+      usernamePositions.set(word, i);
       console.log(`✅ Username potencial encontrado na posição ${i}: "${word}"`);
     }
     
-    // Tenta reconstruir usernames quebrados (ex: "player" "123" -> "player_123")
     if (i < words.length - 1) {
       const current = words[i];
       const next = words[i + 1];
       
-      // Se palavra atual termina com letra e próxima começa com número
       if (/[a-zA-Z]$/.test(current) && /^\d/.test(next)) {
         const reconstructed = current + "_" + next;
         const reconstructedLower = reconstructed.toLowerCase();
         
-        // Verifica se não é palavra banida
         if (!bannedWords.includes(reconstructedLower) && usernamePattern.test(reconstructed)) {
           potentialUsernames.push(reconstructed);
           usernamePositions.set(reconstructed, i);
@@ -315,7 +286,6 @@ function processExtractedText(text: string): string | null {
         }
       }
       
-      // Se palavra atual é número e próxima começa com letra (pode ser parte do username anterior)
       if (i > 0 && /^\d+$/.test(current) && /^[a-zA-Z]/.test(next)) {
         const prev = words[i - 1];
         if (/[a-zA-Z]$/.test(prev)) {
@@ -339,13 +309,6 @@ function processExtractedText(text: string): string | null {
   
   console.log("🎯 Usernames válidos (após filtro):", potentialUsernames);
   
-  // Se não tem nenhum username, retorna null
-  if (potentialUsernames.length === 0) {
-    console.log("❌ Nenhum username válido encontrado");
-    return null;
-  }
-  
-  // Procura por palavra de kill no texto
   let killWordPosition = -1;
   for (let i = 0; i < words.length; i++) {
     const word = words[i].toLowerCase();
@@ -356,9 +319,7 @@ function processExtractedText(text: string): string | null {
     }
   }
   
-  // Se encontrou palavra de kill
   if (killWordPosition !== -1) {
-    // Procura username DEPOIS da palavra de kill (a vítima)
     for (let j = killWordPosition + 1; j < words.length; j++) {
       const candidate = words[j];
       const candidateLower = candidate.toLowerCase();
@@ -369,27 +330,20 @@ function processExtractedText(text: string): string | null {
       }
     }
     
-    // Se encontrou palavra de kill mas NÃO encontrou vítima depois
     console.log("⚠️ Kill word encontrada mas NENHUM username depois dela");
-    console.log("🚫 Provavelmente o OCR não detectou o texto da vítima (muito escuro/preto)");
     console.log("🚫 Retornando NULL para evitar usar o assassino como vítima");
-    return null; // NÃO retorna nada - OCR falhou em ler a vítima
+    return null;
   }
   
-  // Se não encontrou palavra de kill clara
   console.log("⚠️ Nenhuma palavra de ação detectada no texto");
   
-  // Se tem 2+ usernames sem palavra de ação clara, usa o último
   if (potentialUsernames.length >= 2) {
     const victim = potentialUsernames[potentialUsernames.length - 1];
     console.log(`🎯 Múltiplos usernames sem ação clara, usando o ÚLTIMO: "${victim}"`);
     return victim;
   }
   
-  // Se tem apenas 1 username e não tem palavra de ação
-  // Provavelmente o OCR falhou - retorna null
   console.log("🚫 Apenas 1 username e nenhuma palavra de ação - OCR incompleto");
-  console.log("🚫 Retornando NULL para evitar resultado incorreto");
   return null;
 }
 
@@ -406,7 +360,6 @@ async function preprocessImage(imagePath: string): Promise<string[]> {
     const metadata = await sharp.default(imagePath).metadata();
     console.log("📊 Dimensões da imagem:", metadata.width, "x", metadata.height);
     
-    // Versão 1: Inversão com brilho máximo
     const processed1Path = path.join(dir, `${basename}_v1${ext}`);
     await sharp.default(imagePath)
       .resize({ width: Math.min(metadata.width || 1920, 2400) })
@@ -420,7 +373,6 @@ async function preprocessImage(imagePath: string): Promise<string[]> {
       .toFile(processed1Path);
     processedPaths.push(processed1Path);
     
-    // Versão 2: Gamma extremo
     const processed2Path = path.join(dir, `${basename}_v2${ext}`);
     await sharp.default(imagePath)
       .resize({ width: Math.min(metadata.width || 1920, 2400) })
@@ -434,7 +386,6 @@ async function preprocessImage(imagePath: string): Promise<string[]> {
       .toFile(processed2Path);
     processedPaths.push(processed2Path);
     
-    // Versão 3: Foco TOTAL em preto
     const processed3Path = path.join(dir, `${basename}_v3${ext}`);
     await sharp.default(imagePath)
       .resize({ width: Math.min(metadata.width || 1920, 2400) })
@@ -477,16 +428,13 @@ async function extractVictimFromImageFile(imagePath: string): Promise<string | n
       return null;
     }
     
-    // Pré-processa a imagem
     console.log("🔧 Pré-processando imagem...");
     const processedImages = await preprocessImage(imagePath);
     
-    // Testa todas as versões (original + processadas)
     const imagesToTest = [imagePath, ...processedImages];
     
     let bestResult: { victim: string; confidence: number } | null = null;
     
-    // Testa cada imagem com modo SINGLE_LINE (melhor para killfeeds)
     for (let idx = 0; idx < imagesToTest.length; idx++) {
       const testImage = imagesToTest[idx];
       console.log(`\n🔍 [${idx + 1}/${imagesToTest.length}] Testando: ${path.basename(testImage)}`);
@@ -496,7 +444,7 @@ async function extractVictimFromImageFile(imagePath: string): Promise<string | n
         
         await worker.setParameters({
           tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_ ',
-          tessedit_pageseg_mode: PSM.SINGLE_LINE, // Melhor para killfeeds de uma linha
+          tessedit_pageseg_mode: PSM.SINGLE_LINE,
         });
         
         const { data: { text, confidence } } = await worker.recognize(testImage);
@@ -515,7 +463,6 @@ async function extractVictimFromImageFile(imagePath: string): Promise<string | n
             console.log(`✨ Melhor resultado: "${victim}" (conf: ${currentConfidence.toFixed(2)})`);
           }
           
-          // Se encontrou com boa confiança, pode parar
           if (currentConfidence > 50 && victim) {
             console.log("✅ Resultado bom, parando testes");
             break;
@@ -530,7 +477,6 @@ async function extractVictimFromImageFile(imagePath: string): Promise<string | n
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     
-    // Limpa arquivos processados
     console.log("🧹 Limpando arquivos temporários...");
     for (const processed of processedImages) {
       try {
@@ -552,33 +498,59 @@ async function extractVictimFromImageFile(imagePath: string): Promise<string | n
   }
 }
 
+// ─── Função auxiliar: resolve quem é o "assassino" do relatório ───────────────
+// Lógica: se a mensagem menciona alguém, usa essa pessoa. Caso contrário, usa
+// o próprio autor da mensagem.
+function resolveKiller(message: Message): { id: string; mention: string } {
+  const mentioned = message.mentions.users.first();
+  if (mentioned) {
+    return { id: mentioned.id, mention: `<@${mentioned.id}>` };
+  }
+  return { id: message.author.id, mention: `${message.author}` };
+}
+
+// ─── Função auxiliar: extrai o nome da vítima dos args, ignorando menções ─────
+// Ex: "+abadiv jamraiki @fulano" -> "jamraiki"
+// Ex: "+abadiv @fulano jamraiki" -> "jamraiki"
+function extractVictimNameFromArgs(args: string[]): string {
+  // Remove tokens que são menções do Discord (<@123> ou <@!123>)
+  const filtered = args.filter(a => !/^<@!?\d+>$/.test(a));
+  return filtered.join(" ").trim();
+}
+
 export async function handleAbateDivisional(message: Message) {
-  // VERIFICAÇÃO IMPORTANTE: Garante que o canal suporta envio de mensagens
   if (!message.channel.isSendable()) {
     console.error('Canal não suporta envio de mensagens');
     return;
   }
 
   const attachment = message.attachments.first();
-  const args = message.content.trim().split(/\s+/).slice(1); // Pega argumentos após +abadiv
-  const manualVictimName = args.join(" ").trim(); // Nome manual (se fornecido)
-  
+  const args = message.content.trim().split(/\s+/).slice(1); // Argumentos após +abadiv
+
+  // ── Resolve o assassino (autor do relatório) ──────────────────────────────
+  // Se marcou alguém → o relatório é contado para essa pessoa
+  // Se não marcou → é contado para quem enviou o comando
+  const killer = resolveKiller(message);
+
+  // ── Extrai o nome da vítima ignorando possíveis menções nos args ───────────
+  const manualVictimName = extractVictimNameFromArgs(args);
+
   // Verifica se tem nome manual OU imagem
   if (!manualVictimName && !attachment) {
     const errorMsg = await message.reply(
       "❌ **Erro:** Você precisa anexar uma imagem OU digitar o nome da vítima!\n\n" +
       "**Uso com imagem:** `+abadiv` (com imagem anexada)\n" +
       "**Uso manual:** `+abadiv NomeDaVitima`\n" +
-      "**Exemplo:** `+abadiv jamraiki`"
+      "**Uso para outro:** `+abadiv NomeDaVitima @usuario`\n" +
+      "**Exemplo:** `+abadiv jamraiki @fulano`"
     );
     setTimeout(() => errorMsg.delete().catch(() => {}), 8000);
     await message.delete().catch(() => {});
     return;
   }
   
-  // Se tem nome manual, USA ELE (mesmo que tenha imagem também)
+  // ── Fluxo com nome manual ─────────────────────────────────────────────────
   if (manualVictimName) {
-    // Baixa a imagem se existir
     let savedImagePath: string | null = null;
     
     if (attachment?.contentType?.startsWith("image/")) {
@@ -606,7 +578,6 @@ export async function handleAbateDivisional(message: Message) {
       }
     }
     
-    // Usa o nome manual diretamente
     await message.delete().catch(() => {});
     const processingMsg = await message.channel.send("⏳ **Processando...**");
     
@@ -616,18 +587,10 @@ export async function handleAbateDivisional(message: Message) {
       
       if (!user) {
         await processingMsg.edit(`❌ **Erro:** Usuário \`${manualVictimName}\` não encontrado no Roblox.\n\n*Verifique se digitou o nome corretamente.*`);
-        
-        // Limpa imagem se existir
-        if (savedImagePath) {
-          try {
-            const fs = await import("fs");
-            fs.unlinkSync(savedImagePath);
-          } catch {}
-        }
+        if (savedImagePath) { try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {} }
         return;
       }
       
-      // Continua com o fluxo normal
       await processingMsg.edit(`✅ **Usuário confirmado:** \`${user.name}\``);
       await new Promise(resolve => setTimeout(resolve, 800));
       
@@ -637,14 +600,7 @@ export async function handleAbateDivisional(message: Message) {
       
       if (!isInEB) {
         await processingMsg.edit(`❌ **Abate Inválido:** \`${user.name}\` não está no Exército Brasileiro.`);
-        
-        // Limpa imagem se existir
-        if (savedImagePath) {
-          try {
-            const fs = await import("fs");
-            fs.unlinkSync(savedImagePath);
-          } catch {}
-        }
+        if (savedImagePath) { try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {} }
         return;
       }
 
@@ -663,14 +619,7 @@ export async function handleAbateDivisional(message: Message) {
 
       if (!foundDivisional) {
         await processingMsg.edit(`❌ **Abate Inválido:** \`${user.name}\` não pertence a nenhum divisional (PE/BAC/FE/CIE).`);
-        
-        // Limpa imagem se existir
-        if (savedImagePath) {
-          try {
-            const fs = await import("fs");
-            fs.unlinkSync(savedImagePath);
-          } catch {}
-        }
+        if (savedImagePath) { try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {} }
         return;
       }
 
@@ -688,21 +637,21 @@ export async function handleAbateDivisional(message: Message) {
       
       await processingMsg.edit("📝 **Gerando relatório final...**");
 
-      const reportNumber = await getMessageCount(message.author.id, message.client);
+      // Usa o killer resolvido (pode ser outra pessoa ou o próprio autor)
+      const reportNumber = await getMessageCount(killer.id, message.client);
       const dateStr = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
       
       const emojiGroup = groupInfo.emoji ?? "🎯";
       const displayNameGroup = groupInfo.displayName ?? `Abate ${groupInfo.name}`;
       const tag = groupInfo.tag;
 
-      // Verifica se tem imagem para incluir no relatório
       const comprovacao = savedImagePath ? "Comprovação:**" : "Comprovação: Manual (sem imagem)**";
 
       const report = 
 `**╭⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ ${emojiGroup} ✦ ${displayNameGroup} ✦ ${emojiGroup} ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯╮
 Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
 
-<:ACM:1465675415065595904> Assassino(a): ${message.author}
+<:ACM:1465675415065595904> Assassino(a): ${killer.mention}
 
 <:ACM:1465675415065595904> Divisional: [${tag}] (${user.name})
 
@@ -717,18 +666,9 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
       
       await processingMsg.delete().catch(() => {});
       
-      // Se tem imagem salva, envia com o relatório
       if (savedImagePath) {
-        await message.channel.send({ 
-          content: report,
-          files: [savedImagePath]
-        });
-        
-        // Limpa arquivo temporário
-        try {
-          const fs = await import("fs");
-          fs.unlinkSync(savedImagePath);
-        } catch {}
+        await message.channel.send({ content: report, files: [savedImagePath] });
+        try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {}
       } else {
         await message.channel.send({ content: report });
       }
@@ -736,20 +676,13 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
     } catch (error) {
       console.error("💥 Erro fatal:", error);
       await processingMsg.edit("❌ **Erro inesperado ao processar o comando.**\n\n*Tente novamente.*");
-      
-      // Limpa imagem se existir
-      if (savedImagePath) {
-        try {
-          const fs = await import("fs");
-          fs.unlinkSync(savedImagePath);
-        } catch {}
-      }
+      if (savedImagePath) { try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {} }
     }
     
     return;
   }
   
-  // Se chegou aqui, tem imagem (fluxo original)
+  // ── Fluxo com imagem (OCR) ────────────────────────────────────────────────
   if (!attachment?.contentType?.startsWith("image/")) {
     const errorMsg = await message.reply("❌ **Erro:** Você precisa anexar uma **imagem** do abate!\n\n**Uso:** `+abadiv` (com imagem anexada)");
     setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
@@ -798,7 +731,6 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
     if (!victim) {
       await processingMsg.delete().catch(() => {});
       
-      // Verifica se o arquivo ainda existe antes de enviar
       const fs = await import("fs");
       if (fs.existsSync(savedImagePath)) {
         const errorMsg = await message.channel.send({ 
@@ -810,8 +742,10 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
 +abadiv <nome_da_vitima>
 \`\`\`
 
-**Exemplo:**
-\`+abadiv jamraiki\`
+**Para registrar o abate de outro membro:**
+\`\`\`
++abadiv <nome_da_vitima> @usuario
+\`\`\`
 
 **Dica:** Olhe a imagem abaixo e digite o nome da vítima (texto preto/escuro) no comando acima.`,
           files: [savedImagePath] 
@@ -820,9 +754,7 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
       }
       
       const fs2 = await import("fs");
-      if (fs2.existsSync(savedImagePath)) {
-        fs2.unlinkSync(savedImagePath);
-      }
+      if (fs2.existsSync(savedImagePath)) fs2.unlinkSync(savedImagePath);
       return;
     }
 
@@ -887,7 +819,8 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
     
     await processingMsg.edit("📝 **Gerando relatório final...**");
 
-    const reportNumber = await getMessageCount(message.author.id, message.client);
+    // Usa o killer resolvido (pode ser outra pessoa ou o próprio autor)
+    const reportNumber = await getMessageCount(killer.id, message.client);
     const dateStr = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
     
     const emojiGroup = groupInfo.emoji ?? "🎯";
@@ -898,7 +831,7 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
 `**╭⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ ${emojiGroup} ✦ ${displayNameGroup} ✦ ${emojiGroup} ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯╮
 Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
 
-<:ACM:1465675415065595904> Assassino(a): ${message.author}
+<:ACM:1465675415065595904> Assassino(a): ${killer.mention}
 
 <:ACM:1465675415065595904> Divisional: [${tag}] (${user.name})
 
@@ -922,10 +855,7 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, '0')}
     await processingMsg.edit("❌ **Erro inesperado ao processar o comando.**\n\n*Tente novamente com outra imagem.*");
     
     if (savedImagePath) {
-      try {
-        const fs = await import("fs");
-        fs.unlinkSync(savedImagePath);
-      } catch {}
+      try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {}
     }
   }
 }
