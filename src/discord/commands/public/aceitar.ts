@@ -27,7 +27,7 @@ async function acceptJoinRequest(userId: number): Promise<boolean> {
     const res = await fetch(
       `https://groups.roblox.com/v1/groups/${GROUP_ID}/join-requests/users/${userId}`,
       {
-        method: "POST",
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           "Cookie": `.ROBLOSECURITY=${ROBLOX_COOKIE}`
@@ -35,8 +35,14 @@ async function acceptJoinRequest(userId: number): Promise<boolean> {
       }
     );
 
+    if (!res.ok) {
+      const error = await res.json() as any;
+      console.log("Roblox API error:", JSON.stringify(error));
+    }
+
     return res.ok;
-  } catch {
+  } catch (e) {
+    console.log("Fetch error:", e);
     return false;
   }
 }
@@ -49,13 +55,11 @@ createCommand({
     {
       name: "usuario",
       description: "Nome de usuário do Roblox",
-      type: 3, // String type
+      type: 3,
       required: true
     }
   ],
   async run(interaction) {
-    await interaction.deferReply({ ephemeral: true });
-
     const ALLOWED_ROLE_ID = "1468434678603321485";
     const member = interaction.member as any;
 
