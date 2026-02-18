@@ -60,6 +60,8 @@ createCommand({
     }
   ],
   async run(interaction) {
+    await interaction.deferReply();
+
     const ALLOWED_ROLE_ID = "1468434678603321485";
     const member = interaction.member as any;
 
