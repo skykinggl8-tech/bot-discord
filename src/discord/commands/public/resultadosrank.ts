@@ -133,7 +133,8 @@ export async function handleResultadosRank(message: Message) {
 
     const guild = message.guild;
 
-    let lines = `**<:ACM:1465675415065595904> \`RESULTADOS ABATE | 25/..\`**\n`;
+    const month = String(new Date().getMonth() + 1).padStart(2, "0");
+    let lines = `**<:ACM:1465675415065595904> \`RESULTADOS ABATE | 25/${month}\`**\n`;
 
     for (let i = 0; i < sorted.length; i++) {
       const [userId, kills] = sorted[i];
