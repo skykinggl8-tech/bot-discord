@@ -1,9 +1,7 @@
 import type { Message } from "discord.js";
 
-// Canal permitido para usar o comando
 const ALLOWED_CHANNEL = "1455301241935495282";
 
-// Canais onde os abates são registrados
 const COUNTER_CHANNELS = [
   "1460000619782738142",
   "1460000581211914381",
@@ -24,13 +22,12 @@ const DIVISIONS = [
   { id: "1455295702702883003", name: "PRIMEIRA DIVISAO" },
 ];
 
-// Retorna string de promoção (pula 2 divisões para cima)
+// Retorna a mention do cargo para o qual o membro será promovido (pula 2 divisões)
 function getPromocao(member: any): string {
   if (!member) return "—";
 
   const roleIds: string[] = member.roles.cache.map((r: any) => r.id);
 
-  // Acha o cargo de divisão mais alto que o membro possui
   let currentIndex = -1;
   for (let i = DIVISIONS.length - 1; i >= 0; i--) {
     if (roleIds.includes(DIVISIONS[i].id)) {
@@ -41,23 +38,22 @@ function getPromocao(member: any): string {
 
   if (currentIndex === -1) return "Sem divisão";
 
-  const currentDivision = DIVISIONS[currentIndex];
   const promotionIndex = currentIndex + 2;
 
   if (promotionIndex >= DIVISIONS.length) {
-    // Já está no topo ou muito próximo
-    if (currentIndex === DIVISIONS.length - 1) {
-      return `${currentDivision.name} (Topo)`;
+    // Só tem 1 acima
+    if (currentIndex < DIVISIONS.length - 1) {
+      return `<@&${DIVISIONS[DIVISIONS.length - 1].id}>`;
     }
-    // Só tem 1 divisão acima, promove para ela
-    return `${currentDivision.name} → ${DIVISIONS[DIVISIONS.length - 1].name}`;
+    return "Topo";
   }
 
-  return `${currentDivision.name} → ${DIVISIONS[promotionIndex].name}`;
+  return `<@&${DIVISIONS[promotionIndex].id}>`;
 }
 
-async function buildKillRanking(client: any): Promise<Map<string, number>> {
-  const killCounts = new Map<string, number>();
+// Conta quantas vezes cada usuário foi MENCIONADO nos canais
+async function buildMentionRanking(client: any): Promise<Map<string, number>> {
+  const mentionCounts = new Map<string, number>();
 
   for (const channelId of COUNTER_CHANNELS) {
     try {
@@ -76,10 +72,8 @@ async function buildKillRanking(client: any): Promise<Map<string, number>> {
         if (messages.size === 0) break;
 
         for (const msg of messages.values()) {
-          // Relatórios de abate sempre mencionam o assassino
-          if (msg.mentions.users.size > 0) {
-            const authorId = msg.author.id;
-            killCounts.set(authorId, (killCounts.get(authorId) || 0) + 1);
+          for (const [userId] of msg.mentions.users) {
+            mentionCounts.set(userId, (mentionCounts.get(userId) || 0) + 1);
           }
         }
 
@@ -97,7 +91,7 @@ async function buildKillRanking(client: any): Promise<Map<string, number>> {
     }
   }
 
-  return killCounts;
+  return mentionCounts;
 }
 
 function getPositionEmoji(position: number): string {
@@ -109,7 +103,6 @@ function getPositionEmoji(position: number): string {
 }
 
 export async function handleResultadosRank(message: Message) {
-  // Só funciona no canal permitido
   if (message.channel.id !== ALLOWED_CHANNEL) {
     const errorMsg = await message.reply(
       `❌ **Este comando só pode ser usado no canal <#${ALLOWED_CHANNEL}>.**`
@@ -119,38 +112,28 @@ export async function handleResultadosRank(message: Message) {
     return;
   }
 
-  if (!message.channel.isSendable()) {
-    console.error("Canal não suporta envio de mensagens");
-    return;
-  }
+  if (!message.channel.isSendable()) return;
 
   const processingMsg = await message.channel.send("⏳ **Carregando ranking... Aguarde.**");
 
   try {
-    await processingMsg.edit("🔍 **Contando abates nos canais...**");
+    await processingMsg.edit("🔍 **Contando menções nos canais...**");
 
-    const killCounts = await buildKillRanking(message.client);
+    const mentionCounts = await buildMentionRanking(message.client);
 
-    if (killCounts.size === 0) {
-      await processingMsg.edit("❌ **Nenhum abate registrado encontrado nos canais.**");
+    if (mentionCounts.size === 0) {
+      await processingMsg.edit("❌ **Nenhuma menção encontrada nos canais.**");
       return;
     }
 
-    // Ordena por kills (maior → menor) e pega top 10
-    const sorted = Array.from(killCounts.entries())
+    // Ordena do mais mencionado ao menos e pega top 10
+    const sorted = Array.from(mentionCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10);
 
     const guild = message.guild;
 
-    // Data atual no formato dd/mm
-    const dateStr = new Date().toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-    });
-
-    // Monta as linhas do ranking
-    let lines = `**<:ACM:1465675415065595904> \`RESULTADOS ABATE | ${dateStr}\`**\n`;
+    let lines = `**<:ACM:1465675415065595904> \`RESULTADOS ABATE | 25/..\`**\n`;
 
     for (let i = 0; i < sorted.length; i++) {
       const [userId, kills] = sorted[i];
@@ -167,7 +150,7 @@ export async function handleResultadosRank(message: Message) {
           promocaoStr = getPromocao(member);
         }
       } catch {
-        // Mantém os valores padrão se o membro saiu do servidor
+        // Membro saiu do servidor
       }
 
       lines += `
@@ -182,8 +165,6 @@ export async function handleResultadosRank(message: Message) {
 
   } catch (error) {
     console.error("💥 Erro ao gerar ranking:", error);
-    await processingMsg.edit(
-      "❌ **Erro inesperado ao gerar o ranking.**\n\n*Tente novamente.*"
-    );
+    await processingMsg.edit("❌ **Erro inesperado ao gerar o ranking.**\n\n*Tente novamente.*");
   }
 }
