@@ -16,6 +16,11 @@ client.on("messageCreate", async (message: Message) => {
     const { handleAbateDivisional } = await import("./discord/commands/public/abatedivisional.js");
     await handleAbateDivisional(message);
   }
+
+  if (cmd === "resultadosrank") {
+    const { handleResultadosRank } = await import("./discord/commands/public/resultadosrank.js");
+    await handleResultadosRank(message);
+  }
 });
 
 // Servidor HTTP para o Render detectar a porta
