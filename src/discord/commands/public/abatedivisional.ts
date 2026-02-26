@@ -37,18 +37,19 @@ interface GroupInfo {
 // ════════════════════════════════════════════════════════════════════════════════
 //  CONFIGURAÇÃO DOS GRUPOS
 //  Hierarquia de prioridade (1 = mais importante):
-//  1 Especial  →  EB rank 24-28  (tratado separado, não é grupo externo)
+//  1 Especial  →  EB rank 24+    (tratado separado, não é grupo externo)
 //  2 General   →  EB rank 19-23  (tratado separado, não é grupo externo)
-//  3 PE
-//  4 FE
-//  5 BAC
-//  6 STM
-//  7 EsPCEx
-//  8 SGEx
-//  9 ESA
-// 10 ERP
-// 11 CFAP
-// 12 CIOU
+//  3 Oficial   →  EB rank 8-18   (tratado separado, não é grupo externo)
+//  4 PE
+//  5 FE
+//  6 BAC
+//  7 STM
+//  8 EsPCEx
+//  9 SGEx
+// 10 ESA
+// 11 ERP
+// 12 CFAP
+// 13 CIOU
 // ════════════════════════════════════════════════════════════════════════════════
 
 const GROUPS: Record<string, GroupInfo> = {
@@ -58,13 +59,21 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "EB",
     priority: 0, // grupo base, não é divisional
   },
+  OFICIAL: {
+    id: 0, // virtual — não é grupo externo, baseado no rank do EB
+    name: "Oficial EB",
+    tag: "OF",
+    emoji: "🎖",
+    displayName: "Abate Oficial EB",
+    priority: 3,
+  },
   PE: {
     id: 11843586,
     name: "Polícia do Exército",
     tag: "PE",
     emoji: "👮‍♂️",
     displayName: "Abate Polícia do Exército",
-    priority: 3,
+    priority: 4,
   },
   FE: {
     id: 11844011,
@@ -72,7 +81,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "FE",
     emoji: "🔪",
     displayName: "Abate Forças Especiais",
-    priority: 4,
+    priority: 5,
   },
   BAC: {
     id: 14366346,
@@ -80,7 +89,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "BAC",
     emoji: "💀",
     displayName: "Abate Batalhão de Ações de Comandos",
-    priority: 5,
+    priority: 6,
   },
   STM: {
     id: 35572477,
@@ -88,7 +97,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "STM",
     emoji: "⚖",
     displayName: "Abate STM",
-    priority: 6,
+    priority: 7,
   },
   EsPCEx: {
     id: 14394107,
@@ -96,7 +105,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "EsPCEx",
     emoji: "🔗",
     displayName: "Abate EsPCEx",
-    priority: 7,
+    priority: 8,
   },
   SGEx: {
     id: 35384859,
@@ -104,7 +113,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "SGEx",
     emoji: "🗡",
     displayName: "Abate SGEx",
-    priority: 8,
+    priority: 9,
   },
   ESA: {
     id: 35194092,
@@ -112,7 +121,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "ESA",
     emoji: "🏫",
     displayName: "Abate ESA",
-    priority: 9,
+    priority: 10,
   },
   ERP: {
     id: 35204256,
@@ -120,7 +129,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "ERP",
     emoji: "📡",
     displayName: "Abate ERP",
-    priority: 10,
+    priority: 11,
   },
   CFAP: {
     id: 35193608,
@@ -128,7 +137,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "CFAP",
     emoji: "🎓",
     displayName: "Abate CFAP",
-    priority: 11,
+    priority: 12,
   },
   CIOU: {
     id: 35194481,
@@ -136,7 +145,7 @@ const GROUPS: Record<string, GroupInfo> = {
     tag: "CIOU",
     emoji: "🎯",
     displayName: "Abate CIOU",
-    priority: 12,
+    priority: 13,
   },
 };
 
@@ -939,10 +948,24 @@ async function processAbate(
   let foundDivisionalKey: string | null = null;
 
   // Percorre pela ordem de prioridade (menor índice = maior prioridade)
+  // OFICIAL (priority 3) está na lista e tem id=0 (virtual), então tratamos separado
   for (const key of DIVISIONAL_KEYS_SORTED) {
+    if (key === "OFICIAL") {
+      // Oficial é virtual: entra aqui se o tier for oficial/general/especial
+      // e nenhum grupo externo de prioridade maior foi encontrado ainda
+      if (ebTier === "oficial" || ebTier === "general" || ebTier === "especial") {
+        // Só usa OFICIAL se não encontrou nenhum grupo externo de prioridade maior (1-2 são General/Especial, tratados pelo tier)
+        // Se chegou até aqui sem foundDivisionalKey, significa que nenhum grupo externo de prioridade >= 3 foi encontrado
+        // Continua o loop para verificar se há grupo externo de prioridade 4+ (PE, FE, etc.)
+        // Marca como candidato mas não para o loop
+        if (!foundDivisionalKey) foundDivisionalKey = "OFICIAL";
+        continue;
+      }
+      continue;
+    }
     if (userGroups.includes(GROUPS[key].id)) {
-      foundDivisionalKey = key;
-      break; // para na primeira (mais prioritária) encontrada
+      foundDivisionalKey = key; // grupo externo real encontrado, sobrescreve OFICIAL se necessário
+      break;
     }
   }
 
@@ -960,9 +983,11 @@ async function processAbate(
   await processingMsg.edit(`✅ **Divisional:** \`${groupInfo.name}\``);
   await new Promise((r) => setTimeout(r, 800));
 
-  // 5) Busca patente no divisional
+  // 5) Busca patente no divisional (se for OFICIAL, usa a patente do EB)
   await processingMsg.edit("📊 **Consultando patente do divisional...**");
-  const divisionalRank = await getUserRankInGroup(user.id, GROUPS[foundDivisionalKey].id);
+  const divisionalRank = foundDivisionalKey === "OFICIAL"
+    ? ebRankFull.name
+    : await getUserRankInGroup(user.id, GROUPS[foundDivisionalKey].id);
 
   await processingMsg.edit("✅ **Patentes obtidas!**");
   await new Promise((r) => setTimeout(r, 800));
