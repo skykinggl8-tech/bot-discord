@@ -149,10 +149,9 @@ const GROUPS: Record<string, GroupInfo> = {
   },
 };
 
-// Chaves dos divisionais (todos exceto EB), ordenados por prioridade crescente
-// para facilitar a busca do grupo mais prioritário
+// Chaves dos divisionais externos (todos exceto EB e OFICIAL), ordenados por prioridade crescente
 const DIVISIONAL_KEYS_SORTED = Object.keys(GROUPS)
-  .filter(k => k !== "EB")
+  .filter(k => k !== "EB" && k !== "OFICIAL")
   .sort((a, b) => GROUPS[a].priority - GROUPS[b].priority);
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -943,47 +942,30 @@ async function processAbate(
   await new Promise((r) => setTimeout(r, 800));
 
   // 4) Verifica divisional com hierarquia de prioridade
+  //    Procura o grupo externo de maior prioridade (PE, FE, BAC, etc.)
+  //    Se não encontrar nenhum, usa OFICIAL como fallback —
+  //    qualquer vítima Oficial/General/Especial no EB é um abate válido.
   await processingMsg.edit("🔰 **Verificando divisional...**");
 
   let foundDivisionalKey: string | null = null;
 
-  // Percorre pela ordem de prioridade (menor índice = maior prioridade)
-  // OFICIAL (priority 3) está na lista e tem id=0 (virtual), então tratamos separado
   for (const key of DIVISIONAL_KEYS_SORTED) {
-    if (key === "OFICIAL") {
-      // Oficial é virtual: entra aqui se o tier for oficial/general/especial
-      // e nenhum grupo externo de prioridade maior foi encontrado ainda
-      if (ebTier === "oficial" || ebTier === "general" || ebTier === "especial") {
-        // Só usa OFICIAL se não encontrou nenhum grupo externo de prioridade maior (1-2 são General/Especial, tratados pelo tier)
-        // Se chegou até aqui sem foundDivisionalKey, significa que nenhum grupo externo de prioridade >= 3 foi encontrado
-        // Continua o loop para verificar se há grupo externo de prioridade 4+ (PE, FE, etc.)
-        // Marca como candidato mas não para o loop
-        if (!foundDivisionalKey) foundDivisionalKey = "OFICIAL";
-        continue;
-      }
-      continue;
-    }
     if (userGroups.includes(GROUPS[key].id)) {
-      foundDivisionalKey = key; // grupo externo real encontrado, sobrescreve OFICIAL se necessário
+      foundDivisionalKey = key;
       break;
     }
   }
 
+  // Fallback: sem divisional externo → usa OFICIAL (baseado no rank do EB)
   if (!foundDivisionalKey) {
-    await processingMsg.edit(
-      `❌ **Abate Inválido:** \`${user.name}\` não pertence a nenhum divisional (PE/FE/BAC/STM/EsPCEx/SGEx/ESA/ERP/CFAP/CIOU).`
-    );
-    if (imagePath) {
-      try { const fs = await import("fs"); fs.unlinkSync(imagePath); } catch {}
-    }
-    return;
+    foundDivisionalKey = "OFICIAL";
   }
 
   const groupInfo = GROUPS[foundDivisionalKey];
   await processingMsg.edit(`✅ **Divisional:** \`${groupInfo.name}\``);
   await new Promise((r) => setTimeout(r, 800));
 
-  // 5) Busca patente no divisional (se for OFICIAL, usa a patente do EB)
+  // 5) Busca patente no divisional (se for OFICIAL, reutiliza a patente do EB)
   await processingMsg.edit("📊 **Consultando patente do divisional...**");
   const divisionalRank = foundDivisionalKey === "OFICIAL"
     ? ebRankFull.name
