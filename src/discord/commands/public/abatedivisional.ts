@@ -926,16 +926,6 @@ async function processAbate(
   const ebRankFull = await getUserRankInGroupFull(user.id, GROUPS.EB.id);
   const ebTier     = classifyEBRank(ebRankFull.rank);
 
-  if (ebTier === "praca") {
-    await processingMsg.edit(
-      `❌ **Abate Inválido:** \`${user.name}\` é uma Praça (**${ebRankFull.name}**) e não conta como abate válido.`
-    );
-    if (imagePath) {
-      try { const fs = await import("fs"); fs.unlinkSync(imagePath); } catch {}
-    }
-    return;
-  }
-
   await processingMsg.edit(
     `✅ **Patente EB:** \`${ebRankFull.name}\` — Tier: **${tierLabel(ebTier)}**`
   );
@@ -943,8 +933,6 @@ async function processAbate(
 
   // 4) Verifica divisional com hierarquia de prioridade
   //    Procura o grupo externo de maior prioridade (PE, FE, BAC, etc.)
-  //    Se não encontrar nenhum, usa OFICIAL como fallback —
-  //    qualquer vítima Oficial/General/Especial no EB é um abate válido.
   await processingMsg.edit("🔰 **Verificando divisional...**");
 
   let foundDivisionalKey: string | null = null;
@@ -956,7 +944,19 @@ async function processAbate(
     }
   }
 
-  // Fallback: sem divisional externo → usa OFICIAL (baseado no rank do EB)
+  // Praça no EB sem nenhum divisional externo → inválido
+  if (!foundDivisionalKey && ebTier === "praca") {
+    await processingMsg.edit(
+      `❌ **Abate Inválido:** \`${user.name}\` é uma Praça (**${ebRankFull.name}**) e não pertence a nenhum divisional.`
+    );
+    if (imagePath) {
+      try { const fs = await import("fs"); fs.unlinkSync(imagePath); } catch {}
+    }
+    return;
+  }
+
+  // Praça com divisional externo → válido (usa o divisional)
+  // Oficial/General/Especial sem divisional externo → fallback OFICIAL
   if (!foundDivisionalKey) {
     foundDivisionalKey = "OFICIAL";
   }
