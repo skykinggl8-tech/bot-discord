@@ -799,13 +799,14 @@ async function sendReport(params: {
   ebRankName: string;
   divisionalRankName: string;
   ebTier: EBTier;
-  imagePath: string | null;
+  filePath: string | null;   // imagem ou vídeo
   isManual: boolean;
+  isVideo?: boolean;
 }): Promise<void> {
   const {
     message, killer, user, groupInfo,
     ebRankName, divisionalRankName, ebTier,
-    imagePath, isManual,
+    filePath, isManual, isVideo,
   } = params;
 
   const channel = getSendableChannel(message);
@@ -822,9 +823,11 @@ async function sendReport(params: {
   const displayNameGroup = groupInfo.displayName ?? `Abate ${groupInfo.name}`;
   const tag             = groupInfo.tag;
   const comprovacao     =
-    isManual && !imagePath
-      ? "Comprovação: Manual (sem imagem)**"
-      : "Comprovação:**";
+    isManual && !filePath
+      ? "Comprovação: Manual (sem comprovação)**"
+      : isVideo
+        ? "Comprovação: (vídeo abaixo)**"
+        : "Comprovação:**";
 
   const report =
 `**╭⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ ${emojiGroup} ✦ ${displayNameGroup} ✦ ${emojiGroup} ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯╮
@@ -840,12 +843,12 @@ Relatório de Abate N°:${String(reportNumber).padStart(2, "0")}
 
 <:ACM:1465675415065595904> ${comprovacao}`;
 
-  // Envia o relatório (com ou sem imagem)
-  if (imagePath) {
-    await channel.send({ content: report, files: [imagePath] });
+  // Envia o relatório (com ou sem arquivo)
+  if (filePath) {
+    await channel.send({ content: report, files: [filePath] });
     try {
       const fs = await import("fs");
-      fs.unlinkSync(imagePath);
+      fs.unlinkSync(filePath);
     } catch {}
   } else {
     await channel.send({ content: report });
@@ -881,9 +884,10 @@ async function processAbate(
   message: Message,
   killer: { id: string; mention: string },
   victimUsername: string,
-  imagePath: string | null,
+  filePath: string | null,
   isManual: boolean,
-  processingMsg: any
+  processingMsg: any,
+  isVideo: boolean = false
 ): Promise<void> {
   // 1) Busca o usuário no Roblox
   await processingMsg.edit(
@@ -895,8 +899,8 @@ async function processAbate(
     await processingMsg.edit(
       `❌ **Erro:** Usuário \`${victimUsername}\` não encontrado no Roblox.\n\n*Verifique se digitou o nome corretamente.*`
     );
-    if (imagePath) {
-      try { const fs = await import("fs"); fs.unlinkSync(imagePath); } catch {}
+    if (filePath) {
+      try { const fs = await import("fs"); fs.unlinkSync(filePath); } catch {}
     }
     return;
   }
@@ -912,8 +916,8 @@ async function processAbate(
     await processingMsg.edit(
       `❌ **Abate Inválido:** \`${user.name}\` não está no Exército Brasileiro.`
     );
-    if (imagePath) {
-      try { const fs = await import("fs"); fs.unlinkSync(imagePath); } catch {}
+    if (filePath) {
+      try { const fs = await import("fs"); fs.unlinkSync(filePath); } catch {}
     }
     return;
   }
@@ -949,8 +953,8 @@ async function processAbate(
     await processingMsg.edit(
       `❌ **Abate Inválido:** \`${user.name}\` é uma Praça (**${ebRankFull.name}**) e não pertence a nenhum divisional.`
     );
-    if (imagePath) {
-      try { const fs = await import("fs"); fs.unlinkSync(imagePath); } catch {}
+    if (filePath) {
+      try { const fs = await import("fs"); fs.unlinkSync(filePath); } catch {}
     }
     return;
   }
@@ -987,8 +991,9 @@ async function processAbate(
     ebRankName: ebRankFull.name,
     divisionalRankName: divisionalRank,
     ebTier,
-    imagePath,
+    filePath,
     isManual,
+    isVideo,
   });
 }
 
@@ -1011,8 +1016,9 @@ export async function handleAbateDivisional(message: Message): Promise<void> {
   // ── Validação básica: precisa ter nome ou imagem ──────────────────────────
   if (!manualVictimName && !attachment) {
     const errorMsg = await message.reply(
-      "❌ **Erro:** Você precisa anexar uma imagem OU digitar o nome da vítima!\n\n" +
-      "**Uso com imagem:** `+abadiv` (com imagem anexada)\n" +
+      "❌ **Erro:** Você precisa anexar uma imagem/vídeo OU digitar o nome da vítima!\n\n" +
+      "**Uso com imagem (OCR):** `+abadiv` (com imagem anexada)\n" +
+      "**Uso com vídeo:** `+abadiv NomeDaVitima` (com vídeo anexado)\n" +
       "**Uso manual:** `+abadiv NomeDaVitima`\n" +
       "**Uso para outro:** `+abadiv NomeDaVitima @usuario`\n" +
       "**Exemplo:** `+abadiv jamraiki @fulano`"
@@ -1023,33 +1029,41 @@ export async function handleAbateDivisional(message: Message): Promise<void> {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  //  FLUXO MANUAL (nome digitado)
+  //  FLUXO MANUAL (nome digitado) — aceita imagem ou vídeo como comprovação
   // ════════════════════════════════════════════════════════════════════════════
   if (manualVictimName) {
-    let savedImagePath: string | null = null;
+    let savedFilePath: string | null = null;
+    let isVideo = false;
 
-    // Se veio com imagem junto, baixa para anexar no relatório
-    if (attachment?.contentType?.startsWith("image/")) {
+    const isImageAttachment = attachment?.contentType?.startsWith("image/");
+    const isVideoAttachment = attachment?.contentType?.startsWith("video/");
+
+    if (isImageAttachment || isVideoAttachment) {
       try {
         const fs   = await import("fs");
         const path = await import("path");
         const os   = await import("os");
 
-        console.log("📥 Baixando imagem (manual):", attachment.url);
-        const response = await fetch(attachment.url);
+        const ext = isVideoAttachment
+          ? (attachment!.name?.match(/\.\w+$/)?.[0] ?? ".mp4")
+          : ".png";
+
+        console.log(`📥 Baixando ${isVideoAttachment ? "vídeo" : "imagem"} (manual):`, attachment!.url);
+        const response = await fetch(attachment!.url);
 
         if (response.ok) {
           const buffer = Buffer.from(await response.arrayBuffer());
-          savedImagePath = path.join(
+          savedFilePath = path.join(
             os.tmpdir(),
-            `abate-manual-${message.author.id}-${Date.now()}.png`
+            `abate-manual-${message.author.id}-${Date.now()}${ext}`
           );
-          fs.writeFileSync(savedImagePath, buffer);
-          console.log("💾 Imagem salva em:", savedImagePath);
+          fs.writeFileSync(savedFilePath, buffer);
+          isVideo = !!isVideoAttachment;
+          console.log("💾 Arquivo salvo em:", savedFilePath);
         }
       } catch (error) {
-        console.error("⚠️ Erro ao baixar imagem:", error);
-        savedImagePath = null;
+        console.error("⚠️ Erro ao baixar arquivo:", error);
+        savedFilePath = null;
       }
     }
 
@@ -1061,17 +1075,18 @@ export async function handleAbateDivisional(message: Message): Promise<void> {
         message,
         killer,
         manualVictimName,
-        savedImagePath,
+        savedFilePath,
         true,
-        processingMsg
+        processingMsg,
+        isVideo
       );
     } catch (error) {
       console.error("💥 Erro fatal (manual):", error);
       await processingMsg.edit(
         "❌ **Erro inesperado ao processar o comando.**\n\n*Tente novamente.*"
       );
-      if (savedImagePath) {
-        try { const fs = await import("fs"); fs.unlinkSync(savedImagePath); } catch {}
+      if (savedFilePath) {
+        try { const fs = await import("fs"); fs.unlinkSync(savedFilePath); } catch {}
       }
     }
 
@@ -1080,11 +1095,24 @@ export async function handleAbateDivisional(message: Message): Promise<void> {
 
   // ════════════════════════════════════════════════════════════════════════════
   //  FLUXO COM IMAGEM (OCR)
+  //  Vídeo sem nick digitado → erro (vídeo requer nick manual)
   // ════════════════════════════════════════════════════════════════════════════
+  if (attachment?.contentType?.startsWith("video/")) {
+    const errorMsg = await message.reply(
+      "❌ **Erro:** Para comprovação em vídeo, você precisa digitar o nome da vítima!\n\n" +
+      "**Uso:** `+abadiv NomeDaVitima` (com vídeo anexado)\n" +
+      "**Exemplo:** `+abadiv jamraiki` (com vídeo anexado)"
+    );
+    setTimeout(() => errorMsg.delete().catch(() => {}), 8000);
+    await message.delete().catch(() => {});
+    return;
+  }
+
   if (!attachment?.contentType?.startsWith("image/")) {
     const errorMsg = await message.reply(
-      "❌ **Erro:** Você precisa anexar uma **imagem** do abate!\n\n" +
-      "**Uso:** `+abadiv` (com imagem anexada)"
+      "❌ **Erro:** Você precisa anexar uma **imagem** ou **vídeo** do abate!\n\n" +
+      "**Uso com imagem (OCR):** `+abadiv` (com imagem anexada)\n" +
+      "**Uso com vídeo:** `+abadiv NomeDaVitima` (com vídeo anexado)"
     );
     setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
     await message.delete().catch(() => {});
@@ -1171,7 +1199,8 @@ export async function handleAbateDivisional(message: Message): Promise<void> {
       victim,
       savedImagePath,
       false,
-      processingMsg
+      processingMsg,
+      false
     );
   } catch (error) {
     console.error("💥 Erro fatal (OCR):", error);
