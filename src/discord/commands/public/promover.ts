@@ -51,6 +51,9 @@ function extractName(nickname: string): string {
 }
 
 export async function handlePromote(message: Message) {
+  // Verifica se o canal suporta envio de mensagens
+  if (!message.channel.isSendable()) return;
+
   // Verifica se há um membro mencionado
   const target = message.mentions.members?.first();
 
@@ -134,7 +137,6 @@ export async function handlePromote(message: Message) {
     }
 
     // Mensagem de confirmação
-    if (!message.channel.isSendable()) return;
     await message.channel.send(
       `✅ **Promoção realizada com sucesso!**\n\n` +
       `👤 **Membro:** ${target}\n` +
