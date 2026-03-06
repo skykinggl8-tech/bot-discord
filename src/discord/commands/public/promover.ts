@@ -39,7 +39,6 @@ const DIVISION_ROLES = [
   { id: "1455295702702883003", name: "PRIMEIRA DIVISÃO",minIndex: 21, maxIndex: 24 },
 ];
 
-const MIN_PROMOTION_INDEX = 17; // [A 2° Div] — mínimo para ser promovido
 
 function getDivisionForIndex(index: number) {
   return DIVISION_ROLES.find(d => index >= d.minIndex && index <= d.maxIndex) ?? null;
@@ -59,6 +58,22 @@ export async function handlePromote(message: Message) {
 
   if (!target) {
     const err = await message.reply("❌ **Mencione um membro para promover.** Ex: `+promote @usuario`");
+    setTimeout(() => err.delete().catch(() => {}), 5000);
+    await message.delete().catch(() => {});
+    return;
+  }
+
+  // Verifica se quem executou o comando é da 2ª ou 1ª Divisão
+  const ALLOWED_DIVISION_ROLES = [
+    "1455296652830179378", // SEGUNDA DIVISÃO
+    "1455295702702883003", // PRIMEIRA DIVISÃO
+  ];
+
+  const authorRoleIds = message.member?.roles.cache.map((r: any) => r.id) ?? [];
+  const hasPermission = ALLOWED_DIVISION_ROLES.some(id => authorRoleIds.includes(id));
+
+  if (!hasPermission) {
+    const err = await message.reply("❌ **Apenas membros da `2ª Divisão` ou `1ª Divisão` podem usar este comando.**");
     setTimeout(() => err.delete().catch(() => {}), 5000);
     await message.delete().catch(() => {});
     return;
@@ -86,14 +101,6 @@ export async function handlePromote(message: Message) {
   // Aluno de Milão (índice 0) — sem divisão, não pode ser promovido
   if (currentIndex === 0) {
     const err = await message.reply("❌ **[AM] Aluno de Milão não pode ser promovido pelo sistema de divisões.**");
-    setTimeout(() => err.delete().catch(() => {}), 5000);
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  // Abaixo da 2ª Divisão — não pode ser promovido
-  if (currentIndex < MIN_PROMOTION_INDEX) {
-    const err = await message.reply(`❌ **Este membro precisa ser da \`2ª Divisão ou superior\` para ser promovido.**\nCargo atual: \`${RANKS[currentIndex].name}\``);
     setTimeout(() => err.delete().catch(() => {}), 5000);
     await message.delete().catch(() => {});
     return;
