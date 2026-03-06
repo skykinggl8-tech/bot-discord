@@ -21,6 +21,11 @@ client.on("messageCreate", async (message: Message) => {
     const { handleResultadosRank } = await import("./discord/commands/public/resultadosrank.js");
     await handleResultadosRank(message);
   }
+
+  if (cmd === "promote") {
+  const { handlePromote } = await import("./discord/commands/public/promover.js");
+  await handlePromote(message);
+}
 });
 
 // Servidor HTTP para o Render detectar a porta
