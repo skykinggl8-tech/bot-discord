@@ -98,14 +98,6 @@ export async function handlePromote(message: Message) {
     return;
   }
 
-  // Aluno de Milão (índice 0) — sem divisão, não pode ser promovido
-  if (currentIndex === 0) {
-    const err = await message.reply("❌ **[AM] Aluno de Milão não pode ser promovido pelo sistema de divisões.**");
-    setTimeout(() => err.delete().catch(() => {}), 5000);
-    await message.delete().catch(() => {});
-    return;
-  }
-
   // Já está no topo
   if (currentIndex === RANKS.length - 1) {
     const err = await message.reply(`🏆 **${target.displayName} já está no topo da hierarquia! \`[Cmt 1° Div]\`**`);
@@ -126,9 +118,12 @@ export async function handlePromote(message: Message) {
     // Remove cargo de posto atual
     await target.roles.remove(currentRank.id);
 
-    // Troca cargo de divisão se mudou
+    // Troca cargo de divisão se mudou (AM não tem divisão, então só adiciona a nova)
     if (currentDivision && nextDivision && currentDivision.id !== nextDivision.id) {
       await target.roles.remove(currentDivision.id);
+      await target.roles.add(nextDivision.id);
+    } else if (!currentDivision && nextDivision) {
+      // Promovendo de AM → primeira divisão que tiver
       await target.roles.add(nextDivision.id);
     }
 
@@ -137,7 +132,7 @@ export async function handlePromote(message: Message) {
 
     // Atualiza o apelido mantendo o nome
     const baseName = extractName(target.displayName);
-    const newNickname = `${nextRank.prefix} ${baseName}`;
+    const newNickname = nextRank.prefix ? `${nextRank.prefix} ${baseName}` : baseName;
 
     if (newNickname.length <= 32) {
       await target.setNickname(newNickname).catch(() => {});
