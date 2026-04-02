@@ -39,6 +39,10 @@ const DIVISION_ROLES = [
   { id: "1455295702702883003", name: "PRIMEIRA DIVISÃO",minIndex: 21, maxIndex: 24 },
 ];
 
+const ALLOWED_DIVISION_ROLES = [
+  "1455296652830179378", // SEGUNDA DIVISÃO
+  "1455295702702883003", // PRIMEIRA DIVISÃO
+];
 
 function getDivisionForIndex(index: number) {
   return DIVISION_ROLES.find(d => index >= d.minIndex && index <= d.maxIndex) ?? null;
@@ -49,108 +53,109 @@ function extractName(nickname: string): string {
   return nickname.replace(/^\[.*?\]\s*/, "").trim();
 }
 
+// Deleta uma mensagem após N ms
+function deleteAfter(msg: Message, ms = 5000) {
+  setTimeout(() => msg.delete().catch(() => {}), ms);
+}
+
 export async function handlePromote(message: Message) {
   // Verifica se o canal suporta envio de mensagens
   if (!message.channel.isSendable()) return;
 
-  // Verifica se há um membro mencionado
-  const target = message.mentions.members?.first();
+  // Verifica se há membros mencionados
+  const targets = message.mentions.members;
 
-  if (!target) {
-    const err = await message.reply("❌ **Mencione um membro para promover.** Ex: `+promote @usuario`");
-    setTimeout(() => err.delete().catch(() => {}), 5000);
+  if (!targets || targets.size === 0) {
+    const err = await message.reply("❌ **Mencione ao menos um membro para promover.** Ex: `+promote @usuario1 @usuario2`");
+    deleteAfter(err);
     await message.delete().catch(() => {});
     return;
   }
 
   // Verifica se quem executou o comando é da 2ª ou 1ª Divisão
-  const ALLOWED_DIVISION_ROLES = [
-    "1455296652830179378", // SEGUNDA DIVISÃO
-    "1455295702702883003", // PRIMEIRA DIVISÃO
-  ];
-
   const authorRoleIds = message.member?.roles.cache.map((r: any) => r.id) ?? [];
   const hasPermission = ALLOWED_DIVISION_ROLES.some(id => authorRoleIds.includes(id));
 
   if (!hasPermission) {
     const err = await message.reply("❌ **Apenas membros da `2ª Divisão` ou `1ª Divisão` podem usar este comando.**");
-    setTimeout(() => err.delete().catch(() => {}), 5000);
+    deleteAfter(err);
     await message.delete().catch(() => {});
     return;
   }
 
-  const roleIds = target.roles.cache.map((r: any) => r.id);
+  // Processa cada membro mencionado
+  const results: string[] = [];
 
-  // Encontra o cargo de posto atual (pega o mais alto que o membro tiver)
-  let currentIndex = -1;
-  for (let i = RANKS.length - 1; i >= 0; i--) {
-    if (roleIds.includes(RANKS[i].id)) {
-      currentIndex = i;
-      break;
+  for (const [, target] of targets) {
+    const roleIds = target.roles.cache.map((r: any) => r.id);
+
+    // Encontra o cargo de posto atual (pega o mais alto que o membro tiver)
+    let currentIndex = -1;
+    for (let i = RANKS.length - 1; i >= 0; i--) {
+      if (roleIds.includes(RANKS[i].id)) {
+        currentIndex = i;
+        break;
+      }
+    }
+
+    // Sem nenhum cargo reconhecido
+    if (currentIndex === -1) {
+      results.push(`❌ ${target} — não possui nenhum cargo de divisão reconhecido.`);
+      continue;
+    }
+
+    // Já está no topo
+    if (currentIndex === RANKS.length - 1) {
+      results.push(`🏆 ${target} — já está no topo da hierarquia! \`[Cmt 1° Div]\``);
+      continue;
+    }
+
+    const nextIndex = currentIndex + 1;
+    const currentRank = RANKS[currentIndex];
+    const nextRank = RANKS[nextIndex];
+
+    const currentDivision = getDivisionForIndex(currentIndex);
+    const nextDivision = getDivisionForIndex(nextIndex);
+
+    try {
+      // Remove cargo de posto atual
+      await target.roles.remove(currentRank.id);
+
+      // Troca cargo de divisão se mudou
+      if (currentDivision && nextDivision && currentDivision.id !== nextDivision.id) {
+        await target.roles.remove(currentDivision.id);
+        await target.roles.add(nextDivision.id);
+      } else if (!currentDivision && nextDivision) {
+        // Promovendo de AM → primeira divisão que tiver
+        await target.roles.add(nextDivision.id);
+      }
+
+      // Adiciona cargo de posto novo
+      await target.roles.add(nextRank.id);
+
+      // Atualiza o apelido mantendo o nome
+      const baseName = extractName(target.displayName);
+      const newNickname = nextRank.prefix ? `${nextRank.prefix} ${baseName}` : baseName;
+
+      if (newNickname.length <= 32) {
+        await target.setNickname(newNickname).catch(() => {});
+      }
+
+      results.push(
+        `✅ ${target} — \`${currentRank.name}\` → \`${nextRank.name}\` | Apelido: \`${newNickname}\``
+      );
+
+    } catch (error) {
+      console.error(`💥 Erro ao promover ${target.displayName}:`, error);
+      results.push(`❌ ${target} — erro ao promover. Verifique as permissões do bot.`);
     }
   }
 
-  // Sem nenhum cargo reconhecido
-  if (currentIndex === -1) {
-    const err = await message.reply("❌ **Este membro não possui nenhum cargo de divisão reconhecido.**");
-    setTimeout(() => err.delete().catch(() => {}), 5000);
-    await message.delete().catch(() => {});
-    return;
-  }
+  // Envia resumo e deleta após 5 segundos
+  const summary = await message.channel.send(
+    `✅ **Promoção concluída!**\n\n` + results.join("\n")
+  );
+  deleteAfter(summary);
 
-  // Já está no topo
-  if (currentIndex === RANKS.length - 1) {
-    const err = await message.reply(`🏆 **${target.displayName} já está no topo da hierarquia! \`[Cmt 1° Div]\`**`);
-    setTimeout(() => err.delete().catch(() => {}), 5000);
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  const nextIndex = currentIndex + 1;
-  const currentRank = RANKS[currentIndex];
-  const nextRank = RANKS[nextIndex];
-
-  // Divisão atual e próxima
-  const currentDivision = getDivisionForIndex(currentIndex);
-  const nextDivision = getDivisionForIndex(nextIndex);
-
-  try {
-    // Remove cargo de posto atual
-    await target.roles.remove(currentRank.id);
-
-    // Troca cargo de divisão se mudou (AM não tem divisão, então só adiciona a nova)
-    if (currentDivision && nextDivision && currentDivision.id !== nextDivision.id) {
-      await target.roles.remove(currentDivision.id);
-      await target.roles.add(nextDivision.id);
-    } else if (!currentDivision && nextDivision) {
-      // Promovendo de AM → primeira divisão que tiver
-      await target.roles.add(nextDivision.id);
-    }
-
-    // Adiciona cargo de posto novo
-    await target.roles.add(nextRank.id);
-
-    // Atualiza o apelido mantendo o nome
-    const baseName = extractName(target.displayName);
-    const newNickname = nextRank.prefix ? `${nextRank.prefix} ${baseName}` : baseName;
-
-    if (newNickname.length <= 32) {
-      await target.setNickname(newNickname).catch(() => {});
-    }
-
-    // Mensagem de confirmação
-    await message.channel.send(
-      `✅ **Promoção realizada com sucesso!**\n\n` +
-      `👤 **Membro:** ${target}\n` +
-      `📉 **De:** \`${currentRank.name}\`\n` +
-      `📈 **Para:** \`${nextRank.name}\`\n` +
-      `🏷️ **Novo apelido:** \`${newNickname}\``
-    );
-
-    await message.delete().catch(() => {});
-
-  } catch (error) {
-    console.error("💥 Erro ao promover membro:", error);
-    await message.reply("❌ **Erro ao promover o membro. Verifique se o bot tem permissões suficientes.**");
-  }
+  await message.delete().catch(() => {});
 }
